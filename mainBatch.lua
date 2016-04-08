@@ -48,47 +48,57 @@ end
 -- Main loop
 --------------------------------------------------------------------------------
 
-function load_image(file)
-    local im = image.load(file)
+function load_image(i)
+    local im = image.load('images/' .. a['images'][idxs[i]])
     local center = a['center'][idxs[i]]
     local scale = a['scale'][idxs[i]]
     local inp = crop(im, center, scale, 0, 256)
-    return inp:view(1,3,256,256)
+    local info = {
+        center = center,
+        scale = scale
+    }
+    return inp:view(1,3,256,256), info
 end
 
-function img_path(i)
-    return 'images/' .. a['images'][idxs[i]]
-end
-local minibatchSize = 64
-local tmp_img = load_image(img_path(0))
-local dataBlock = tmp_image:replicate(1,minibatchSize):clone()
-tmp_img = nil
+local minibatchSize = 8
+print('loading tmp image')
+local tmp_image = load_image(1)
+print('loaded tmp image')
+local dataBlock = tmp_image:zeros(minibatchSize,tmp_image:size(2),tmp_image:size(3),tmp_image:size(4))
+print('initialized batch block')
+tmp_image = nil
 
 local startIdx = 0
 function populate_block(startIdx)
     local num_in_batch = 0
+    local batchInfo = {}
     for i = 1,minibatchSize do
         local idx  = startIdx + i
         if(idx > nsamples) then break end
         num_in_batch = num_in_batch + 1
-        local im = load_image(image_path(idx))
+        local im, info = load_image(idx)
         dataBlock[i]:copy(im)
+        table.insert(batchInfo,info)
     end
-    return dataBlock:narrow(1,1,num_in_batch), num_in_batch
+
+    return dataBlock:narrow(1,1,num_in_batch), batchInfo
 end
 
-while(startIdx < nsamples) do
-   local block, num_in_batch = populate_block(startIdx)
-   startIdx = startIdx + num_in_batch
+while(startIdx <= nsamples) do
+   local block, info = populate_block(startIdx)
+   print(num_in_batch)
+   startIdx = startIdx + block:size(1)
     -- Get network output
-    local out = m:forward(block:cuda())
+    local cudaBlock  = block:cuda()
+    local out = m:forward(cudaBlock)
     cutorch.synchronize()
-    local hm = out[2][1]:float()
+    cudaBlock = nil
+    local hm = out[2]:float()
     hm[hm:lt(0)] = 0
 
     -- Get predictions (hm and img refer to the coordinate space)
     for i = 1,block:size(1) do
-        local preds_hm, preds_img = getPreds(hm[i], center, scale)
+        local preds_hm, preds_img = getPreds(hm:narrow(1,i,1), info[i].center, info[i].scale)
         preds[i]:copy(preds_img)
     end
     xlua.progress(startIdx,nsamples)
