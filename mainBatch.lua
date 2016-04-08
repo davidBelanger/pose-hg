@@ -40,7 +40,6 @@ if arg[1] == 'eval' then
 else
     nsamples = idxs:nElement() 
     -- Displays a convenient progress bar
-    xlua.progress(0,nsamples)
     preds = torch.Tensor(nsamples,16,2)
 end
 
@@ -84,6 +83,7 @@ function populate_block(startIdx)
     return dataBlock:narrow(1,1,num_in_batch), batchInfo
 end
 
+xlua.progress(0,nsamples)
 while(startIdx <= nsamples) do
    local block, info = populate_block(startIdx)
    print(num_in_batch)
